@@ -1,0 +1,278 @@
+---
+title: "Analiza Danych - Projekt"
+author: "Aleksandra Bukowska, Jakub Busłowski, Oskar Kowalski"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::downcute:
+  self_contained: true
+default_style: "light"
+downcute_theme: "default"
+---
+
+```{r setup, include=FALSE}
+## Global options
+knitr::opts_chunk$set(cache = TRUE)
+#biblioteki
+library(dplyr) 
+library(ggplot2)
+library(summarytools)
+library(rmdformats)
+library(validate)
+library(validatetools)
+library(errorlocate)
+library(deductive)
+library(xts)
+library(Information)
+library(scorecard)
+library(editrules)
+library(editrules)
+library(outliers)
+library(ggstatsplot)
+library(readxl)
+```
+
+Na poczatku wczytujemy zbior danych
+
+```{r}
+cafe_pg<-read_excel("cafe_pg.xlsx")
+cafe_pg
+```
+
+# cafe_pg
+
+#I.ETAP - Czyszczenie Danych
+
+## 1. Przegląd danych
+
+```{r}
+head(cafe_pg) 
+```
+
+Sprawdziliśmy czy są spacje. Ok, nie ma spacji
+
+## 2 poszukiwanie brakujących zmiennych
+
+```{r}
+is.na(cafe_pg)
+```
+
+Nie ma brakujących danych.
+
+## 3. Sprawdzenie typów danych w każdej kolumnie
+
+```{r}
+data_class <- data.frame(class = sapply(cafe_pg, class))
+data_class
+```
+
+Mamy daty, słowa i numery
+
+## 4. Sprawdzenie wiarygodności danych
+
+```{r}
+summary(cafe_pg)
+view(dfSummary(cafe_pg))
+descr(cafe_pg)
+```
+
+## 5. Sprawdzanie spełnienia pewnych reguł dla zbioru danych
+
+Posiadając już podstawową wiedzę na temat naszych danych, chcemy sprawdzić kilka podstawowych reguł: czy zmienna zniżka na pewno wszędzie nie jest ujemna, czy zmienna ilość nie jest nigdzie ujemna, czy wartość ceny nie jest nigdzie ujemna, czy podatek jest nie jest nigdzie ujemny, czy suma nie jest nigdzie ujemna.
+
+```{r}
+rules <- validator(Discount >= 0, Quantity > 0
+                   , Rate > 0, Tax > 0, Total > 0)
+cf <- confront(cafe_pg, rules, key="Bill Number")
+summary(cf)
+```
+
+Reguły są spełnione.
+
+```{r}
+barplot(cf, main="cafe_pg")
+```
+
+Wizualizacja spełnienia reguły, nie ma błędów, reguły w naszym zbiorze danych są spełnione.
+
+## 3. Obserwacje odstające
+
+Sprawdzanie zbioru danych pod kątem wartości odstających jest kluczowe dla utrzymania jakości analizy danych i poprawnego zrozumienia badanego zjawiska. W przypadku identyfikacji wartości odstających, istnieją różne metody ich obsługi, takie jak usuwanie, transformacja, czy stosowanie bardziej zaawansowanych technik modelowania. Przechodzimy więc do sprawdzenia naszego zbioru danych pod względem występowania wartości odstających.
+
+Zlokalizowanie wartości odstających
+
+### Mozemy stworzyc funkcje, ktora bedzie wykrywac odstajace obserwacje
+
+```{r}
+find_outliers <- function(cafe_pg, k = 1.5) {
+  quantiles <- quantile(cafe_pg, c(0.25, 0.5, 0.75))
+  diff <- k * (quantiles[3] - quantiles[1])
+  lb <- quantiles[1] - diff 
+  ub <- quantiles[3] + diff
+  
+  is_outlier <- function(el) {
+    el < lb || ub < el  
+  }}
+```
+
+Nic się nie dzieje tutaj.
+
+### Inna metoda
+
+```{r}
+out <-boxplot.stats(cafe_pg$Discount)$out
+summary(out)
+
+
+boxplot(cafe_pg$Discount, col = "blue",
+        ylab = "Discount",
+        main = "Boxplot of Discount")
+
+
+boxplot(cafe_pg$Tax, col = "blue",
+        ylab = "Tax",
+        main = "Boxplot of Tax")
+
+mtext(paste("Outliers: ", paste(out, collapse = ", ")))
+
+boxplot(cafe_pg$Rate, col = "blue",
+        ylab = "Rate",
+        main = "Boxplot of Rate")
+
+boxplot(cafe_pg$Quantity, col = "blue",
+        ylab = "Quantity",
+        main = "Boxplot of Quantity")
+
+boxplot(cafe_pg$Total, col = "blue",
+        ylab = "total",
+        main = "Boxplot of Total")
+mtext(paste("Outliers: ", paste(out, collapse = ", "))) 
+```
+
+## Mozemy zwizualizowac wartosci odstajacae na wykresie wraz z opisem, ktore z nich sa odstajace.
+
+## 4. Przekształcenie wartości odstających
+
+Discount
+
+```{r}
+qnt <- quantile(cafe_pg$Discount, probs=c(.25, .75), na.rm = T)
+caps <- quantile(cafe_pg$Discount, probs=c(.05, .95), na.rm = T)
+H <- 1.5 * IQR(cafe_pg$Discount, na.rm = T)
+cafe_pg$Discount[cafe_pg$Discount < (qnt[1] - H)] <- caps[1]
+cafe_pg$Discount[cafe_pg$Discount > (qnt[2] + H)] <- caps[2]
+boxplot.stats(cafe_pg$Discount)$out
+```
+
+Brak wartosci odstajacych dla Discount
+
+```{r}
+summary(cafe_pg$Discount)
+
+boxplot(cafe_pg$Discount, col = "blue",
+        ylab = "Discount",
+        main = "Boxplot of Discount")
+```
+
+Rate
+
+```{r}
+qnt <- quantile(cafe_pg$Rate, probs=c(.25, .75), na.rm = T)
+caps <- quantile(cafe_pg$Rate, probs=c(.05, .95), na.rm = T)
+H <- 1.5 * IQR(cafe_pg$Rate, na.rm = T)
+cafe_pg$Rate[cafe_pg$Rate < (qnt[1] - H)] <- caps[1]
+cafe_pg$Rate[cafe_pg$Rate > (qnt[2] + H)] <- caps[2]
+boxplot.stats(cafe_pg$Rate)$out 
+```
+
+brak wartosci odstajacych dla Rate
+
+```{r}
+summary(cafe_pg$Rate)
+
+boxplot(cafe_pg$Rate, col = "pink",
+        ylab = "Rate",
+        main = "Boxplot of Rate")
+```
+
+Total
+
+```{r}
+qnt <- quantile(cafe_pg$Total, probs=c(.25, .75), na.rm = T)
+caps <- quantile(cafe_pg$Total, probs=c(.05, .95), na.rm = T)
+H <- 1.5 * IQR(cafe_pg$Total, na.rm = T)
+cafe_pg$Total[cafe_pg$Total < (qnt[1] - H)] <- caps[1]
+cafe_pg$Total[cafe_pg$Total > (qnt[2] + H)] <- caps[2]
+boxplot.stats(cafe_pg$Total)$out 
+```
+
+Brak wartosci odstajacych dla Total
+
+```{r}
+
+boxplot(cafe_pg$Total, col = "darkgreen",
+        ylab = "total",
+        main = "Boxplot of Total")
+
+summary(cafe_pg$Rate)
+```
+
+Tax
+
+```{r}
+qnt <- quantile(cafe_pg$Tax, probs=c(.25, .75), na.rm = T)
+caps <- quantile(cafe_pg$Tax, probs=c(.05, .95), na.rm = T)
+H <- 1.5 * IQR(cafe_pg$Tax, na.rm = T)
+cafe_pg$Tax[cafe_pg$Tax < (qnt[1] - H)] <- caps[1]
+cafe_pg$Tax[cafe_pg$Tax > (qnt[2] + H)] <- caps[2]
+boxplot.stats(cafe_pg$Tax)$out
+```
+
+Brak wartosci odstajacych dla Tax
+
+```{r}
+summary(cafe_pg$Tax)
+
+boxplot(cafe_pg$Tax, col = "orange",
+        ylab = "Tax",
+        main = "Boxplot of Tax")
+```
+
+Quantity
+
+```{r}
+qnt <- quantile(cafe_pg$Quantity, probs=c(.25, .75), na.rm = T)
+caps <- quantile(cafe_pg$Quantity, probs=c(.05, .95), na.rm = T)
+H <- 1.5 * IQR(cafe_pg$Quantity, na.rm = T)
+cafe_pg$Quantity[cafe_pg$Quantity < (qnt[1] - H)] <- caps[1]
+cafe_pg$Quantity[cafe_pg$Quantity > (qnt[2] + H)] <- caps[2]
+boxplot.stats(cafe_pg$Quantity)$out 
+```
+
+Brak wartosci odstajacych dla Discount
+
+```{r}
+qnt <- quantile(cafe_pg$Quantity, probs=c(.25, .75), na.rm = T)
+caps <- quantile(cafe_pg$Quantity, probs=c(.05, .95), na.rm = T)
+H <- 1.5 * IQR(cafe_pg$Quantity, na.rm = T)
+cafe_pg$Quantity[cafe_pg$Quantity < (qnt[1] - H)] <- caps[1]
+cafe_pg$Quantity[cafe_pg$Quantity > (qnt[2] + H)] <- caps[2]
+boxplot.stats(cafe_pg$Quantity)$out 
+```
+
+# II.ETAP - Wizualizacje
+
+1.  Z jakiej kategorii rzeczy sprzedają się najlepiej
+2.  Czy miesiąc wpływa na sprzedaż
+3.  Która kategoria sprzedaje się najlepiej
+4.  Wizualizacja przychodów w zależności od kategrii
+5.  Jak godzina wpływa na ilośc sprzedaży Time a quantity
+6.  wykres rozrzutu / gęstości cen
+7.  Jak rodzaj itemu wpływa na cene
+8.  Jak rodzaj produktów najlepiej się sprzedał
+9.  Jaki item najlepiej się sprżadał
+
+lubridate
+
+# III.ETAP - Analiza opisowa
+
+# IV.ETAP - Wnioskowanie stytystyczne
