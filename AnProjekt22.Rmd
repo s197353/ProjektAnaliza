@@ -1,0 +1,549 @@
+---
+title: "Analiza Danych - Projekt"
+author: "Aleksandra Bukowska, Jakub Busłowski, Oskar Kowalski"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::downcute:
+  self_contained: true
+default_style: "light"
+downcute_theme: "default"
+---
+
+```{r setup, include=FALSE}
+## Global options
+knitr::opts_chunk$set(cache = TRUE)
+#biblioteki
+library(summarytools)
+library(rmdformats)
+library(validate)
+library(validatetools)
+library(errorlocate)
+library(deductive)
+library(xts)
+library(Information)
+library(scorecard)
+library(editrules)
+library(editrules)
+library(outliers)
+library(ggstatsplot)
+library(readxl)
+library(ggplot2)
+library(dplyr)
+library(scales)
+install.packages("RColorBrewer")
+library(RColorBrewer)
+```
+
+Na poczatku wczytujemy zbior danych
+
+```{r}
+cafe_pg
+```
+
+# cafe_pg
+
+# I.ETAP - Czyszczenie Danych
+
+## 1. Przegląd danych
+
+```{r}
+head(cafe_pg) 
+```
+
+Sprawdziliśmy czy są spacje. Ok, nie ma spacji
+
+## 2. W "Time" mamy konkrętną godzinę i datę która jest nie potrzebna bo mamy już kolmne "Date, usuwamy datę z "Time"
+
+```{r}
+cafe_pg <- cafe_pg %>%
+  mutate(Time = format(as.POSIXct(Time, format = "%Y-%m-%d %H:%M:%S"), "%H:%M:%S"))
+
+print(head(cafe_pg))
+```
+
+## 2 poszukiwanie brakujących zmiennych
+
+```{r}
+is.na(cafe_pg)
+```
+
+Nie ma brakujących danych.
+
+## 3. Sprawdzenie typów danych w każdej kolumnie
+
+```{r}
+data_class <- data.frame(class = sapply(cafe_pg, class))
+data_class
+```
+
+Mamy daty, słowa i numery
+
+## 4. Sprawdzenie wiarygodności danych
+
+```{r}
+summary(cafe_pg)
+view(dfSummary(cafe_pg))
+descr(cafe_pg)
+```
+
+## 5. Sprawdzanie spełnienia pewnych reguł dla zbioru danych
+
+Posiadając już podstawową wiedzę na temat naszych danych, chcemy sprawdzić kilka podstawowych reguł: czy zmienna zniżka na pewno wszędzie nie jest ujemna, czy zmienna ilość nie jest nigdzie ujemna, czy wartość ceny nie jest nigdzie ujemna, czy podatek jest nie jest nigdzie ujemny, czy suma nie jest nigdzie ujemna.
+
+```{r}
+rules <- validator(Discount >= 0, Quantity > 0
+                   , Rate > 0, Tax > 0, Total > 0)
+cf <- confront(cafe_pg, rules, key="Bill Number")
+summary(cf)
+```
+
+Reguły są spełnione.
+
+```{r}
+barplot(cf, main="cafe_pg")
+```
+
+Wizualizacja spełnienia reguły, nie ma błędów, reguły w naszym zbiorze danych są spełnione.
+
+## 6. Obserwacje odstające
+
+Sprawdzanie zbioru danych pod kątem wartości odstających jest kluczowe dla utrzymania jakości analizy danych i poprawnego zrozumienia badanego zjawiska. W przypadku identyfikacji wartości odstających, istnieją różne metody ich obsługi, takie jak usuwanie, transformacja, czy stosowanie bardziej zaawansowanych technik modelowania. Przechodzimy więc do sprawdzenia naszego zbioru danych pod względem występowania wartości odstających.
+
+Zlokalizowanie wartości odstających
+
+### Mozemy stworzyc funkcje, ktora bedzie wykrywac odstajace obserwacje
+
+```{r}
+find_outliers <- function(cafe_pg, k = 1.5) {
+  quantiles <- quantile(cafe_pg, c(0.25, 0.5, 0.75))
+  diff <- k * (quantiles[3] - quantiles[1])
+  lb <- quantiles[1] - diff 
+  ub <- quantiles[3] + diff
+  
+  is_outlier <- function(el) {
+    el < lb || ub < el  
+  }}
+```
+
+Nic się nie dzieje tutaj.
+
+### Inna metoda
+
+```{r}
+out <-boxplot.stats(cafe_pg$Discount)$out
+summary(out)
+
+
+boxplot(cafe_pg$Discount, col = "blue",
+        ylab = "Discount",
+        main = "Boxplot of Discount")
+
+
+boxplot(cafe_pg$Tax, col = "turquoise2",
+        ylab = "Tax",
+        main = "Boxplot of Tax")
+
+mtext(paste("Outliers: ", paste(out, collapse = ", ")))
+
+boxplot(cafe_pg$Rate, col = "coral2",
+        ylab = "Rate",
+        main = "Boxplot of Rate")
+
+boxplot(cafe_pg$Quantity, col = "linen",
+        ylab = "Quantity",
+        main = "Boxplot of Quantity")
+
+boxplot(cafe_pg$Total, col = "red2",
+        ylab = "total",
+        main = "Boxplot of Total")
+mtext(paste("Outliers: ", paste(out, collapse = ", "))) 
+```
+
+## Mozemy zwizualizowac wartosci odstajacae na wykresie wraz z opisem, ktore z nich sa odstajace.
+
+## 4. Przekształcenie wartości odstających
+
+Discount
+
+```{r}
+qnt <- quantile(cafe_pg$Discount, probs=c(.25, .75), na.rm = T)
+caps <- quantile(cafe_pg$Discount, probs=c(.05, .95), na.rm = T)
+H <- 1.5 * IQR(cafe_pg$Discount, na.rm = T)
+cafe_pg$Discount[cafe_pg$Discount < (qnt[1] - H)] <- caps[1]
+cafe_pg$Discount[cafe_pg$Discount > (qnt[2] + H)] <- caps[2]
+boxplot.stats(cafe_pg$Discount)$out
+```
+
+Brak wartości odstajacych dla Discount
+
+```{r}
+summary(cafe_pg$Discount)
+
+boxplot(cafe_pg$Discount, col = "blue",
+        ylab = "Discount",
+        main = "Boxplot of Discount")
+```
+
+Rate
+
+```{r}
+qnt <- quantile(cafe_pg$Rate, probs=c(.25, .75), na.rm = T)
+caps <- quantile(cafe_pg$Rate, probs=c(.05, .95), na.rm = T)
+H <- 1.5 * IQR(cafe_pg$Rate, na.rm = T)
+cafe_pg$Rate[cafe_pg$Rate < (qnt[1] - H)] <- caps[1]
+cafe_pg$Rate[cafe_pg$Rate > (qnt[2] + H)] <- caps[2]
+boxplot.stats(cafe_pg$Rate)$out 
+```
+
+Brak wartości odstajacych dla Rate
+
+```{r}
+summary(cafe_pg$Rate)
+
+boxplot(cafe_pg$Rate, col = "pink",
+        ylab = "Rate",
+        main = "Boxplot of Rate")
+```
+
+Total
+
+```{r}
+qnt <- quantile(cafe_pg$Total, probs=c(.25, .75), na.rm = T)
+caps <- quantile(cafe_pg$Total, probs=c(.05, .95), na.rm = T)
+H <- 1.5 * IQR(cafe_pg$Total, na.rm = T)
+cafe_pg$Total[cafe_pg$Total < (qnt[1] - H)] <- caps[1]
+cafe_pg$Total[cafe_pg$Total > (qnt[2] + H)] <- caps[2]
+boxplot.stats(cafe_pg$Total)$out 
+```
+
+Brak wartosci odstajacych dla Total
+
+```{r}
+
+boxplot(cafe_pg$Total, col = "darkgreen",
+        ylab = "total",
+        main = "Boxplot of Total")
+
+summary(cafe_pg$Rate)
+```
+
+Tax
+
+```{r}
+qnt <- quantile(cafe_pg$Tax, probs=c(.25, .75), na.rm = T)
+caps <- quantile(cafe_pg$Tax, probs=c(.05, .95), na.rm = T)
+H <- 1.5 * IQR(cafe_pg$Tax, na.rm = T)
+cafe_pg$Tax[cafe_pg$Tax < (qnt[1] - H)] <- caps[1]
+cafe_pg$Tax[cafe_pg$Tax > (qnt[2] + H)] <- caps[2]
+boxplot.stats(cafe_pg$Tax)$out
+```
+
+Brak wartosci odstajacych dla Tax
+
+```{r}
+summary(cafe_pg$Tax)
+
+boxplot(cafe_pg$Tax, col = "orange",
+        ylab = "Tax",
+        main = "Boxplot of Tax")
+```
+
+Quantity
+
+```{r}
+ggplot(cafe_pg, aes(x = factor(0), y = Quantity)) + 
+  geom_boxplot() +
+  labs(title = "Wykres pudełkowy dla Quantity", 
+       x = "", 
+       y = "Quantity") +
+  theme_bw()
+
+outliers <- boxplot.stats(cafe_pg$Quantity)$out
+print(outliers)
+```
+
+wartości odstające w Quantity nie są błedęmi w pomiarze. Są to poprostu dane na temat sprzedaży które może posiadać wartość równą 1 sprzedanego produktu jak i 30.
+
+# II.ETAP - Wizualizacje
+
+1.  Z jakiej kategorii rzeczy sprzedają się najlepiej - ilość sprzedanych towarów
+2.  Wizualizacja przychodów w zależności od kategorii
+3.  Ilość sprzedanych produktów zależnie od miesiąca
+4.  Czy miesiąc wpływa na sprzedaż - przychód ze sprzedaży w każdym miesiącu
+5.  Jak godzina wpływa na ilośc sprzedaży - Time a quantity
+6.  Jak godzina wpływa na przychód ze sprzedaży - Time a Total
+7.  Wykres rozrzutu / gęstości cen
+8.  Ile jest różnych produktów sprzedanych w takiej samej ilości w jednej sprzedaży
+9.  Jaki rodzaj itemu najlepiej się sprzedał
+10. Top 10 najlepiej sprzedających się produktów
+11. Produkty między miejsem 11 a 20 pod względem ilości sprzedaży
+12. Produkty między miejsem 21 a 30 pod względem ilości sprzedaży
+13. Top 10 najgorzej sprzedających się produktów
+
+## 1. Z jakiej kategorii rzeczy sprzedają się najlepiej - ilość sprzedanych towarów
+
+```{r}
+sales_by_category <- cafe_pg %>%
+  group_by(Category) %>%
+  summarise(Total_Sales = sum(Quantity)) %>%
+  arrange(desc(Total_Sales))
+
+ggplot(sales_by_category, aes(x = reorder(Category, Total_Sales), y = Total_Sales, fill = Category)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = Total_Sales), vjust = -0.3, size = 3.5) +
+  scale_fill_viridis_d() + 
+  labs(x = "Kategoria", y = "Całkowita ilość sprzedanych produktów", title = "Ilość sprzedanych produktów według kategorii") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")   
+```
+
+## 2. Wizualizacja przychodów w zależności od kategorii
+
+```{r}
+revenue_by_category <- cafe_pg %>%
+  group_by(Category) %>%
+  summarise(Total_Revenue = sum(Total)) %>%
+  arrange(desc(Total_Revenue))
+
+ggplot(revenue_by_category, aes(x = reorder(Category, Total_Revenue), y = Total_Revenue, fill = Category)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = Total_Revenue), vjust = -0.3, size = 3.5) + 
+  scale_fill_viridis_d() + 
+  labs(x = "Kategoria", y = "Całkowity przychód", title = "Przychody według kategorii") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none") +
+  scale_y_continuous(labels = function(x) format(x, big.mark = ",", scientific = FALSE))  
+```
+
+## 3.Ilość sprzedanych produktów zależnie od miesiąca
+
+```{r}
+cafe_pg$Date <- as.Date(cafe_pg$Date, format = "%d.%b.%y")
+cafe_pg$Month <- format(cafe_pg$Date, "%m")
+
+sales_by_month <- cafe_pg %>%
+  group_by(Month) %>%
+  summarise(Total_Sales = sum(Quantity)) %>%
+  mutate(Month = factor(Month, levels = sprintf("%02d", 1:12), labels = month.name))
+
+# Tworzenie wykresu
+ggplot(sales_by_month, aes(x = Month, y = Total_Sales, fill = Month)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = Total_Sales), vjust = 0.5, size = 3.5) +
+  scale_fill_brewer(palette = "Set3") +
+  labs(x = "Miesiąc", y = "Całkowita ilość sprzedanych produktów", title = "Sprzedaż w zależności od miesiąca") +
+  theme_minimal() +
+  coord_flip() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
+```
+
+## 4. Czy miesiąc wpływa na sprzedaż - przychód ze sprzedaży w każdym miesiącu
+
+```{r}
+cafe_pg$Date <- as.Date(cafe_pg$Date)
+cafe_pg$Month <- format(cafe_pg$Date, "%m")
+
+monthly_sales <- cafe_pg %>%
+  group_by(Month) %>%
+  summarize(TotalSales = sum(as.numeric(gsub(",", ".", Total)), na.rm = TRUE)) %>%
+  mutate(Month = factor(Month, levels = sprintf("%02d", 1:12), labels = month.name))
+
+# Tworzenie wykresu
+ggplot(monthly_sales, aes(x = Month, y = TotalSales, fill = Month)) + 
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = scales::label_number()(TotalSales)), vjust = 0.5, size = 3.5) + # Wyśrodkowanie etykiet
+  theme_minimal() +
+  scale_x_discrete(limits = month.name) +
+  scale_y_continuous(labels = scales::label_number()) +
+  xlab("Miesiąc") +
+  ylab("Całkowita sprzedaż") +
+  ggtitle("Przychód zależny od miesiąca") +
+  scale_fill_brewer(palette = "Set3") +
+  coord_flip()+
+  theme(legend.position = "none")
+```
+
+## 5. Jak godzina wpływa na ilośc sprzedaży - Time a quantity
+
+```{r}
+cafe_pg$Time <- as.POSIXct(cafe_pg$Time, format="%H:%M:%S")
+
+cafe_pg$Hour <- format(cafe_pg$Time, "%H")
+
+hourly_sales <- cafe_pg %>%
+  group_by(Hour) %>%
+  summarise(Total_Quantity = sum(Quantity))
+
+ggplot(hourly_sales, aes(x = Hour, y = Total_Quantity, fill = Hour)) +
+  geom_bar(stat = "identity") +
+  scale_fill_viridis_d() + 
+  labs(x = "Godzina", y = "Całkowita ilość sprzedanych produktów", title = "Sprzedaż produktów według godziny") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+```
+
+## 6. Jak godzina wpływa na przychód ze sprzedaży - Time a Total
+
+```{r}
+cafe_pg$Hour <- format(as.POSIXct(cafe_pg$Time, format = "%H:%M:%S"), "%H")
+
+hourly_revenue <- cafe_pg %>%
+  group_by(Hour) %>%
+  summarise(Total_Revenue = sum(Total))
+
+ggplot(hourly_revenue, aes(x = Hour, y = Total_Revenue, fill = Hour)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = rainbow(length(unique(hourly_revenue$Hour)))) + 
+  labs(x = "Godzina", y = "Całkowity przychód", title = "Przychód ze sprzedaży w zależności od godziny") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none") + 
+  scale_y_continuous(labels = scales::comma)
+```
+
+## 7. Wykres rozrzutu / gęstości cen
+
+Wykres rozrzutu
+
+```{r}
+ggplot(cafe_pg, aes(x = Quantity, y = Rate)) +
+  geom_point() +
+  xlab("Ilość") +
+  ylab("Cena") +
+  ggtitle("Wykres rozrzutu ceny względem ilości")
+```
+
+Wykres gęstości
+
+```{r}
+ggplot(cafe_pg, aes(x = Rate)) +
+  geom_density(fill = "blue") +
+  xlab("Cena") +
+  ylab("Gęstość") +
+  ggtitle("Wykres gęstości cen")
+```
+
+#### Przekszatłacamy nazwe bo w kodzie wyrzuca błąd gdy chcemy go puścić go z nazwą Item Desc i Item_Desc.
+
+```{r}
+names(cafe_pg)[3] <- "Produkt"
+```
+
+## 8. Ile jest różnych produktów sprzedanych w takiej samej ilości w jednej sprzedaży
+
+```{r}
+products_count_by_quantity <- cafe_pg %>%
+  group_by(Quantity) %>%
+  summarise(Different_Products = n_distinct(Produkt)) %>%
+  ungroup()
+
+max_quantity <- max(products_count_by_quantity$Quantity, na.rm = TRUE)
+
+ggplot(products_count_by_quantity, aes(x = Quantity, y = Different_Products, fill = Different_Products)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = Different_Products), vjust = -0.5, size = 3.5) +
+  scale_x_continuous(breaks = 0:max_quantity, limits = c(0, max_quantity)) +
+  scale_fill_gradient(low = "blue", high = "lightblue") +
+  labs(x = "Całkowita ilość sprzedanych produktów", y = "Liczba różnych produktów", title = "Ilość produktów sprzedanych w takiej samej ilości w jednej sprzedaży") +
+  theme_minimal() +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 0))
+
+```
+
+## 9. Jaki rodzaj itemu najlepiej się sprzedał
+
+```{r}
+best_selling_items <- cafe_pg %>%
+  group_by(Produkt) %>%
+  summarize(Total_Quantity = sum(Quantity)) %>%
+  arrange(desc(Total_Quantity))
+
+print(best_selling_items)
+```
+
+#### Na wykresie nie zmieściłoby się 579 rodzajów produktów.
+
+## 10. Top 10 najlepiej sprzedających się produktów
+
+```{r}
+top_selling_items <- cafe_pg %>%
+  group_by(Produkt) %>%
+  summarize(Total_Quantity = sum(Quantity)) %>%
+  arrange(desc(Total_Quantity)) %>%
+  top_n(10, Total_Quantity)
+
+print(top_selling_items)
+
+ggplot(top_selling_items, aes(x = reorder(Produkt, Total_Quantity), y = Total_Quantity, fill = Produkt)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = Total_Quantity), position = position_dodge(width = 0.9), hjust = 0.5, vjust = 0.5) +
+  theme_minimal() +
+  labs(x = "Opis przedmiotu (Produkt)", y = "Całkowita ilość sprzedanych (Total Quantity)", title = "Top 10 najlepiej sprzedających się przedmiotów") +
+  coord_flip()+
+  theme(legend.position = "none")
+```
+
+## 11. Produkty między miejsem 11 a 20 pod względem ilości sprzedaży
+
+```{r}
+top_products <- cafe_pg %>%
+  group_by(Produkt) %>%
+  summarise(Total_Quantity = sum(Quantity)) %>%
+  arrange(desc(Total_Quantity)) %>%
+  slice(11:20) 
+
+ggplot(top_products, aes(x = reorder(Produkt, Total_Quantity), y = Total_Quantity, fill = Produkt)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = Total_Quantity), position = position_dodge(width = 0.9), hjust = 0.5, vjust = 0.5) +
+  scale_fill_viridis_d() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "Rodzaj produktu", y = "Całkowita ilość sprzedanych produktów", title = "Sprzedaż produktów (miejsca 11-20) według rodzaju") +
+  coord_flip() +
+  theme(legend.position = "none") 
+```
+
+## 12. Produkty między miejsem 21 a 30 pod względem ilości sprzedaży
+
+```{r}
+top_products <- cafe_pg %>%
+  group_by(Produkt) %>%
+  summarise(Total_Quantity = sum(Quantity)) %>%
+  arrange(desc(Total_Quantity)) %>%
+  slice(21:30) 
+
+ggplot(top_products, aes(x = reorder(Produkt, Total_Quantity), y = Total_Quantity, fill = Produkt)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = Total_Quantity), position = position_dodge(width = 0.9), hjust = 0.5, vjust = 0.5) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "Rodzaj produktu", y = "Całkowita ilość sprzedanych produktów", title = "Sprzedaż produktów (miejsca 21-30) według rodzaju") +
+  coord_flip()+
+  scale_fill_brewer(palette = "Paired")+
+  theme(legend.position = "none")
+
+```
+
+## 13. Top 10 najgorzej sprzedających się produktów
+
+```{r}
+worst_selling_items <- cafe_pg %>%
+  group_by(Produkt) %>%
+  summarize(Total_Quantity = sum(Quantity)) %>%
+  arrange(Total_Quantity) %>%
+  slice_head(n = 10) 
+
+print(worst_selling_items)
+
+ggplot(worst_selling_items, aes(x = reorder(Produkt, Total_Quantity), y = Total_Quantity, fill = Produkt)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = Total_Quantity), position = position_dodge(width = 0.9), hjust = 0.5, vjust = 0.5) +
+  theme_minimal() +
+  labs(x = "Opis przedmiotu (Produkt)", y = "Całkowita ilość sprzedanych (Total Quantity)", title = "Top 10 najgorzej sprzedających się przedmiotów") +
+  coord_flip()+
+  theme(legend.position = "none")
+```
+
+### 
+
+# III.ETAP - Analiza opisowa
+
+# IV.ETAP - Wnioskowanie statystyczne
